@@ -1,0 +1,1195 @@
+---
+title: "Etogramas Base de datos completa"
+author: "Juliana Zapata"
+date: "1/15/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Manejo de datos, gráficos, colores
+library(readxl)
+library(jcolors)
+library(DT)
+library(plotly)
+library(ggpubr)
+library(broom)
+library(janitor) # edición de nombres
+library(mgcv) # Modelos GAM
+library(psych)
+library(autoplotly)
+library(dplyr)
+library(tidyverse)
+
+# Análisis multivariado
+library(FactoMineR)
+library(factoextra)
+library(forcats)
+```
+
+# Análisis teniendo en cuenta solo el número total de observaciones
+```{r}
+datos<- read_excel("~/Desktop/Estadistica Naty/Base de datos etograma completa Marzo.xlsx", 
+    sheet = "Global") %>% 
+
+  mutate_at(c("Cepa", "Sexo", "Jornada", "Individuo", "Semana", "Momento",
+           "Evento"), as.factor) %>% 
+mutate_if(is.character, as.numeric)  %>% 
+  filter(Semana != 'AE') %>%
+  filter(Momento != 'A') %>%
+    filter(Jornada != 'Nocturna') %>%
+filter(Momento != 'D') %>%
+filter(Evento != 'Duration_mean')%>% 
+filter(Evento != 'Total_duration')-> 
+
+
+datos
+```
+
+
+## Distribuciones originales
+
+```{r, fig.width=9, fig.height=8}
+datos %>% 
+  select_if(is.numeric) %>% 
+  gather(key = "variable", value = "valor") %>% 
+  ggplot(data = ., aes(x = valor)) +
+  facet_wrap(~variable, scales = "free") +
+  geom_density()
+```
+
+##Descriptivo y Exploratorio {.tabset .tabset-fade .tabset-pills}
+
+##3 Descriptivo filtrado por Cepa 
+```{r}
+datos%>% 
+  select(-c(1, 3:6)) %>% 
+  gather(key = "Variable", value = "value", -Cepa, -Evento) %>% 
+  group_by(Variable, Cepa, Evento) %>%
+  summarise(Promedio = round(mean(value, na.rm = TRUE), digits = 2),
+            DE = round(sd(value, na.rm = TRUE), digits = 2),
+            Mínimo = round(min(value, na.rm = TRUE), digits = 2),
+            Máximo = round(max(value, na.rm = TRUE), digits = 2)) %>% 
+  ungroup() %>% 
+  mutate(CV = round((DE/Promedio)*100, digits = 2)) %>% 
+  datatable(extensions = 'Buttons', options = list(
+     dom = 'Bfrtip',
+     buttons = c('csv', 'excel', 'pdf')))
+```
+## Pruebas de normalidad - Shapiro wilk
+
+- Si las distribuciones son tipo gaussianas, entonces podremos usar correlaciones paramétricas como el coeficiente de correlación de Pearson. De lo contrario, las correlaciones será de tipo no paramétrico (Spearman, Tau-Kendall, otras...).
+- La validación del supuesto de normalidad puede realizarse de forma gráfica con histogramas, densidades o [gráficos cuantil-cuantil (QQNorm)](https://es.wikipedia.org/wiki/Gr%C3%A1fico_Q-Q). También es posible implementar contraste de hipótesis a través del [test de Shapiro Wilk](https://es.wikipedia.org/wiki/Test_de_Shapiro%E2%80%93Wilk), bajo el siguiente juego de hipótesis:
+
+$$H_0: X \sim N(\mu,\sigma) \\
+H_1: X \nsim N(\mu,\sigma)$$
+
+- **Conclusión:** si el valor p es mayor que el alfa (en nuestro caso 0.05 o 5%) no se rechaza la hipótesis nula, es decir, que existe evidencia para manifestar que la variable en cuestión se distribuye de forma normal.
+
+```{r}
+datos %>% 
+  select_if(is.numeric) %>% 
+  gather(key = "variable", value = "valor") %>% 
+  group_by(variable) %>% 
+  summarise(valor = list(valor)) %>%
+  ungroup() %>% 
+  group_by(variable) %>% 
+  mutate(shapiro_valorP = round(shapiro.test(unlist(valor))$p.value, digits = 5),
+         Resultado = if_else(shapiro_valorP <= 0.05, true = "No normalidad",
+                             false = "Sí normalidad"))
+``` 
+
+## Distribuciones Generales
+
+```{r,fig.width=9, fig.height=4}
+library(leaps)
+datos%>%
+select(-c(1, 3:6)) %>% 
+  gather(key = "variable", value = "value", -Evento, -Cepa) %>% 
+  mutate (variable = factor(variable, levels = c("IN","OF","LG",	"AI",	"IC",	"INC",
+                                                "ER",	"PR",	"DG",	"C",	"MBC",
+                                                "ES",	"OM",	"V",	"RS",	"AT",
+                                                "EL",	"AMN", "B",	"AM",	"S",
+                                                "DI",	"EC",	"EX",	"H",	"VC", "RS2",
+                                              	"P",	"AE",	"AMI",	"M"))) %>% 
+  group_by(variable, Cepa, Evento) %>% 
+  summarise(promedio = mean(value, na.rm = TRUE),
+            de = sd(value, na.rm = TRUE))  %>% 
+  
+  ggplot(aes(x = Cepa, y = promedio, color = Evento,
+             ymin  = promedio - de,
+             ymax = promedio + de)) +
+facet_wrap(~variable, scales = "free", ncol = 4) + 
+  geom_point() +
+  geom_errorbar(width = 0.2) +
+  scale_fill_jcolors(palette = "pal7") +
+  theme_light() +
+  theme(strip.background = element_rect(fill = "snow4")
+   )
+```
+```{r, fig.width=9, fig.height=6}
+datos %>% 
+select(-c(1, 3:6)) %>% 
+  gather(key = "variable", value = "value", -Evento, -Cepa) %>% 
+  mutate(variable=factor(variable, levels = c("IN","OF","LG",	"AI",	"IC",	"INC",
+                                                "ER",	"PR",	"DG",	"C",	"MBC",
+                                                "ES",	"OM",	"V",	"RS",	"AT",
+                                                "EL",	"AMN", "B",	"AM",	"S",
+                                                "DI",	"EC",	"EX",	"H",	"VC",
+                                              	"P",	"AE",	"AMI",	"M"))) %>% 
+  
+  ggplot(data = ., aes(x = variable, y = (value), fill = Cepa)) +
+  facet_wrap(~variable, nrow = NULL, scales = "free", ncol = 5) + 
+  geom_boxplot(alpha = 0.5) +
+  theme_light() +
+  theme(strip.background = element_rect(fill = "snow4")
+        )
+```
+
+## ACP Total
+
+
+- **ACP:**
+
+```{r}
+dataACP <- datos %>% 
+    select(-c(1:7, 20,29,34,33,36:38))
+
+acpCepas <- PCA(X = dataACP, scale.unit = TRUE, ncp = ncol(dataACP),
+                   graph = FALSE)
+summary(acpCepas)
+```
+- **Ver contribución de todas las variables en los componentes principales:**
+
+```{r}
+acpCepas$eig %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "componente") %>%
+  mutate(across(where(is.numeric), round, digits = 2)) %>% 
+  datatable(rownames = FALSE,
+            extensions = 'Buttons',
+            options = list(dom = 'Bfrtip',
+                           buttons = c('excel')))
+```
+## Correlaciones {.tabset .tabset-fade .tabset-pills}
+
+### Tabla
+
+```{r}
+acpCepas$var$coord %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "Comportamiento") %>%
+  mutate(across(where(is.numeric), round, digits = 2)) %>% 
+  datatable(rownames = FALSE,
+            extensions = 'Buttons',
+            options = list(dom = 'Bfrtip',
+                           buttons = c('excel')))
+```
+- **Gráficar variables en los primeros 3 componentes:**
+
+```{r, fig.width=9}
+ggarrange(
+  fviz_pca_var(acpCepas, axes = c(1, 2),
+             select.var = list(contrib = 10), repel = TRUE) +
+    labs(title = ""),
+  
+  fviz_pca_var(acpCepas, axes = c(1, 3),
+             select.var = list(contrib = 10), repel = TRUE)+
+    labs(title = ""),
+  
+  fviz_pca_var(acpCepas, axes = c(2, 3),
+             select.var = list(contrib = 10), repel = TRUE)+
+    labs(title = ""),
+  
+  ncol = 3
+)
+```
+- **Gráfico componentes con Momento:**
+
+```{r, fig.width=6, fig.height=3}
+datos$Dim1 <- acpCepas$ind$coord[, 1]
+datos$Dim2 <- acpCepas$ind$coord[, 2]
+datos$Dim3 <- acpCepas$ind$coord[, 3]
+
+# Cp1 vs Cp2
+  g1 <- ggarrange(
+  
+  fviz_pca_var(acpCepas, axes = c(1, 2),  
+               select.var = list(contrib = 16), graph=FALSE,
+               geom = c("text"), col.var = "black", labelsize=4,
+               fill.var = "white", alpha.var = 0, col.quanti.sup = "blue",
+               repel = TRUE) +
+        geom_vline(xintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        geom_hline(yintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+        labs(x = "PC1(44.45%)", y = "PC2(21.67%)",
+        title = "A", color = ""),
+  
+  datos %>% 
+      mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim1, y = Dim2, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right")+
+  xlim(-2, 2) + ylim (-2, 2) +
+  labs(x = "PC1(44.45%)", y = "PC2(21.67%)",
+        title = "B", color = "")
+)
+  g1
+```
+
+- **3 primeros componentes con Momentos:**
+
+```{r, fig.width=8, fig.height=4}
+datos$Dim1 <- acpCepas$ind$coord[, 1]
+datos$Dim2 <- acpCepas$ind$coord[, 2]
+datos$Dim3 <- acpCepas$ind$coord[, 3]
+
+
+# Cp1 vs Cp2
+  ggarrange(
+  
+  fviz_pca_var(acpCepas, axes = c(1, 2),  
+               select.var = list(contrib = 16), graph=FALSE,
+               geom = c("text"), col.var = "black", labelsize=4,
+               fill.var = "white", alpha.var = 0, col.quanti.sup = "blue",
+               repel = TRUE) +
+        geom_vline(xintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        geom_hline(yintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+        labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "A", color = ""),
+  
+  datos %>% 
+      mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim1, y = Dim2, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right") +
+  xlim(-1, 1) + ylim (-1, 1) +
+  labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "B", color = "")
+)
+  
+# Cp1 vs Cp3
+ggarrange(
+  
+  fviz_pca_var(acpCepas, axes = c(1, 3),
+             select.var = list(contrib = 10), repel = TRUE) +
+    labs(title = ""),
+  
+  datos%>% 
+    mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim1, y = Dim3, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right") +
+  xlim(-1, 1) + ylim (-1, 1) +
+  labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "B", color = "")
+)
+
+# Cp2 vs Cp3
+
+ggarrange(
+  
+  fviz_pca_var(acpCepas, axes = c(2, 3),
+             select.var = list(contrib = 10), repel = TRUE) +
+    labs(title = ""),
+  
+  datos %>% 
+    mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim2, y = Dim3, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right") +
+  xlim(-1, 1) + ylim (-1, 1) +
+  labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "B", color = "")
+)
+  
+```
+
+## Modelos Mixtos {.tabset .tabset-fade .tabset-pills}
+
+### Modelo CP1
+
+- **Linear mixed-effects model**
+
+```{r}
+library(nlme)
+mod_cp1 <- lme(Dim1 ~ Cepa, method = "REML", 
+               random = ~ Cepa | Individuo,
+               data = datos,
+               control = lmeControl(opt = "optim"))
+
+tidy(car::Anova(mod_cp1, type = "II"))
+```
+- **Residuales:**
+
+```{r}
+par(mfrow = c(1, 2))
+#plot(mod_cp1)
+
+residuales <- mod_cp1$residuals[, 1]
+ajustados <- mod_cp1$fitted[, 1]
+
+qqnorm(residuales)
+qqline(residuales)
+
+plot(x = ajustados, y = residuales)
+abline(h = 0, col = "red", lty = 2)
+```
+### Gráfico diferencia entre medias.
+
+```{r}
+library(multcomp)
+library(rstatix)
+library(emmeans)
+medias1 <- as.data.frame(cld(emmeans(mod_cp1, ~Cepa), 
+                            alpha = 0.05, Letters = letters,
+                            adjust = "tukey"))
+
+
+medias1  %>%  
+  ggplot(aes(x = Cepa, y = emmean, ymin = emmean - SE,
+             ymax = emmean + SE)) +
+  geom_point(position = position_dodge(0.9), alpha = 1) +
+  geom_errorbar(width = 0.1) +
+  geom_line(aes(group = 1)) +
+  geom_text(aes(label = .group, y = emmean),
+            position = position_dodge(0.9),
+            show.legend = FALSE, color = "black",
+            hjust = -0.3,
+            vjust = -0.5) +
+  scale_color_grey() +
+  scale_fill_grey() +
+  geom_hline(yintercept = 0, color = "black", linetype = 2) +
+  labs(y = "", x = "Cepa") +
+  theme_bw() +
+  theme(legend.position = "none") 
+```
+
+## Modelo CP2
+
+- **Linear mixed-effects mode**
+
+```{r}
+mod_cp2 <- lme(Dim2~ Cepa, method = "REML", 
+               random = ~ Cepa | Individuo,
+               data = datos,
+               control = lmeControl(opt = "optim"))
+
+tidy(car::Anova(mod_cp2, type = "II"))
+```
+
+- **Estimación de medias:**
+
+```{r}
+library(rstatix)
+library(stats)
+library(emmeans)
+emmeans(mod_cp2, specs = "Cepa")
+```
+
+## Gráfico diferencia entre medias.
+
+```{r}
+library(multcomp)
+medias2 <- as.data.frame(cld(emmeans(mod_cp2, ~Cepa), 
+                            alpha = 0.05, Letters = letters,
+                            adjust = "tukey"))
+
+
+medias2  %>%  
+  ggplot(aes(x = Cepa, y = emmean, ymin = emmean - SE,
+             ymax = emmean + SE)) +
+  geom_point(position = position_dodge(0.9), alpha = 1) +
+  geom_errorbar(width = 0.1) +
+  geom_line(aes(group = 1)) +
+  geom_text(aes(label = .group, y = emmean),
+            position = position_dodge(0.9),
+            show.legend = FALSE, color = "black",
+            hjust = -0.3,
+            vjust = -0.5) +
+  scale_color_grey() +
+  scale_fill_grey() +
+  geom_hline(yintercept = 0, color = "black", linetype = 2) +
+  labs(y = "", x = "Cepa") +
+  theme_bw() +
+  theme(legend.position = "none") 
+```
+
+- **Prueba U de Mann-Whitney:**
+
+```{r}
+wilcox.test(AE ~ Cepa, data = datos)
+```
+
+# Comparación de medias Grupo
+```{r}
+library(rstatix)
+library(ggpubr)
+
+modelList<-list()
+for(i in 8:38){
+    fmla <- formula(paste(names(datos)[i], " ~ Cepa"))
+    modelList[[i]]<-wilcox.test(fmla, data = datos, paired = FALSE)
+}%>%
+  print()
+
+```
+
+# Comparación de medias Cepa
+```{r}
+ggplot(datos, aes(x = Cepa, y = EL))+
+  geom_boxplot()+
+  stat_compare_means()
+```
+
+##Filtrando por Macho 
+
+# Análisis de los Machos teniendo en cuenta solo el número total de observaciones
+```{r}
+Datos2 <- datos %>%
+ 
+filter(Sexo != 'Hembra')%>% 
+filter(Jornada != 'Diurna')%>% 
+filter(Momento != 'A')%>% 
+filter(Momento != 'D')%>% 
+filter(Semana != 'AE')%>% 
+filter(Evento != 'Total_duration')%>% 
+filter(Evento != 'Duration_mean')
+
+
+Datos2
+```
+## ACP Total
+
+
+- **ACP:**
+
+```{r}
+dataACP2 <- Datos2 %>% 
+    select(-c(1:7,20,29,34,33,36:38))
+
+acpCepas2 <- PCA(X = dataACP2, scale.unit = TRUE, ncp = ncol(dataACP2),
+                   graph = FALSE)
+summary(acpCepas2)
+```
+- **Ver contribución de todas las variables en los componentes principales:**
+
+```{r}
+acpCepas2$eig %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "componente") %>%
+  mutate(across(where(is.numeric), round, digits = 2)) %>% 
+  datatable(rownames = FALSE,
+            extensions = 'Buttons',
+            options = list(dom = 'Bfrtip',
+                           buttons = c('excel')))
+```
+## Correlaciones {.tabset .tabset-fade .tabset-pills}
+
+### Tabla
+
+```{r}
+acpCepas2$var$coord %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "Comportamiento") %>%
+  mutate(across(where(is.numeric), round, digits = 2)) %>% 
+  datatable(rownames = FALSE,
+            extensions = 'Buttons',
+            options = list(dom = 'Bfrtip',
+                           buttons = c('excel')))
+```
+- **Gráficar variables en los primeros 3 componentes:**
+
+```{r, fig.width=9}
+ggarrange(
+  fviz_pca_var(acpCepas2, axes = c(1, 2),
+             select.var = list(contrib = 10), repel = TRUE) +
+    labs(title = ""),
+  
+  fviz_pca_var(acpCepas2, axes = c(1, 3),
+             select.var = list(contrib = 10), repel = TRUE)+
+    labs(title = ""),
+  
+  fviz_pca_var(acpCepas2, axes = c(2, 3),
+             select.var = list(contrib = 10), repel = TRUE)+
+    labs(title = ""),
+  
+  ncol = 3
+)
+```
+- **Gráfico componentes con Momento:**
+
+```{r, fig.width=6, fig.height=3}
+Datos2$Dim1 <- acpCepas2$ind$coord[, 1]
+Datos2$Dim2 <- acpCepas2$ind$coord[, 2]
+Datos2$Dim3 <- acpCepas2$ind$coord[, 3]
+
+# Cp1 vs Cp2
+  g2 <- ggarrange(
+  
+  fviz_pca_var(acpCepas2, axes = c(1, 2),  
+               select.var = list(contrib = 16), graph=FALSE,
+               geom = c("text"), col.var = "black", labelsize=4,
+               fill.var = "white", alpha.var = 0, col.quanti.sup = "blue",
+               repel = TRUE) +
+        geom_vline(xintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        geom_hline(yintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+        labs(x = "PC1(44.45%)", y = "PC2(21.67%)",
+        title = "A", color = ""),
+  
+  Datos2 %>% 
+      mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim1, y = Dim2, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right")+
+  xlim(-2, 2) + ylim (-2, 2) +
+  labs(x = "PC1(44.45%)", y = "PC2(21.67%)",
+        title = "B", color = "")
+)
+  g2
+```
+
+- **3 primeros componentes con Momentos:**
+
+```{r, fig.width=7, fig.height=3}
+Datos2$Dim1 <- acpCepas2$ind$coord[, 1]
+Datos2$Dim2 <- acpCepas2$ind$coord[, 2]
+Datos2$Dim3 <- acpCepas2$ind$coord[, 3]
+
+
+# Cp1 vs Cp2
+  ggarrange(
+  
+  fviz_pca_var(acpCepas2, axes = c(1, 2),  
+               select.var = list(contrib = 16), graph=FALSE,
+               geom = c("text"), col.var = "black", labelsize=4,
+               fill.var = "white", alpha.var = 0, col.quanti.sup = "blue",
+               repel = TRUE) +
+        geom_vline(xintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        geom_hline(yintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+        labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "A", color = ""),
+  
+  Datos2 %>% 
+      mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim1, y = Dim2, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right") +
+  xlim(-3, 3) + ylim (-3, 3) +
+  labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "B", color = "")
+)
+  
+# Cp1 vs Cp3
+ggarrange(
+  
+  fviz_pca_var(acpCepas2, axes = c(1, 3),
+             select.var = list(contrib = 10), repel = TRUE) +
+    labs(title = ""),
+  
+  Datos2%>% 
+    mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim1, y = Dim3, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right") +
+  xlim(-1, 1) + ylim (-1, 1) +
+  labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "B", color = "")
+)
+
+# Cp2 vs Cp3
+
+ggarrange(
+  
+  fviz_pca_var(acpCepas2, axes = c(2, 3),
+             select.var = list(contrib = 10), repel = TRUE) +
+    labs(title = ""),
+  
+  Datos2 %>% 
+    mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim2, y = Dim3, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right") +
+  xlim(-1, 1) + ylim (-1, 1) +
+  labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "B", color = "")
+)
+  
+```
+
+## Modelos Mixtos {.tabset .tabset-fade .tabset-pills}
+
+### Modelo CP1
+
+- **Linear mixed-effects model**
+
+```{r}
+library(nlme)
+mod_cpM1 <- lme(Dim1 ~ Cepa, method = "REML", 
+               random = ~ Cepa | Individuo,
+               data = Datos2,
+               control = lmeControl(opt = "optim"))
+
+tidy(car::Anova(mod_cpM1, type = "II"))
+```
+- **Residuales:**
+
+```{r}
+par(mfrow = c(1, 2))
+#plot(mod_cp1)
+
+residuales <- mod_cpM1$residuals[, 1]
+ajustados <- mod_cpM1$fitted[, 1]
+
+qqnorm(residuales)
+qqline(residuales)
+
+plot(x = ajustados, y = residuales)
+abline(h = 0, col = "red", lty = 2)
+```
+### Gráfico diferencia entre medias.
+
+```{r}
+library(multcomp)
+library(rstatix)
+library(emmeans)
+mediasM1 <- as.data.frame(cld(emmeans(mod_cpM1, ~Cepa), 
+                            alpha = 0.05, Letters = letters,
+                            adjust = "tukey"))
+
+
+mediasM1  %>%  
+  ggplot(aes(x = Cepa, y = emmean, ymin = emmean - SE,
+             ymax = emmean + SE)) +
+  geom_point(position = position_dodge(0.9), alpha = 1) +
+  geom_errorbar(width = 0.1) +
+  geom_line(aes(group = 1)) +
+  geom_text(aes(label = .group, y = emmean),
+            position = position_dodge(0.9),
+            show.legend = FALSE, color = "black",
+            hjust = -0.3,
+            vjust = -0.5) +
+  scale_color_grey() +
+  scale_fill_grey() +
+  geom_hline(yintercept = 0, color = "black", linetype = 2) +
+  labs(y = "", x = "Cepa") +
+  theme_bw() +
+  theme(legend.position = "none") 
+```
+
+## Modelo CP2
+
+- **Linear mixed-effects mode**
+
+```{r}
+mod_cpM2 <- lme(Dim2~ Cepa, method = "REML", 
+               random = ~ Cepa | Individuo,
+               data = Datos2,
+               control = lmeControl(opt = "optim"))
+
+tidy(car::Anova(mod_cpM2, type = "II"))
+```
+
+- **Estimación de medias:**
+
+```{r}
+library(rstatix)
+library(stats)
+library(emmeans)
+emmeans(mod_cpM2, specs = "Cepa")
+```
+
+## Gráfico diferencia entre medias.
+
+```{r}
+library(multcomp)
+mediasM2 <- as.data.frame(cld(emmeans(mod_cpM2, ~Cepa), 
+                            alpha = 0.05, Letters = letters,
+                            adjust = "tukey"))
+
+
+mediasM2  %>%  
+  ggplot(aes(x = Cepa, y = emmean, ymin = emmean - SE,
+             ymax = emmean + SE)) +
+  geom_point(position = position_dodge(0.9), alpha = 1) +
+  geom_errorbar(width = 0.1) +
+  geom_line(aes(group = 1)) +
+  geom_text(aes(label = .group, y = emmean),
+            position = position_dodge(0.9),
+            show.legend = FALSE, color = "black",
+            hjust = -0.3,
+            vjust = -0.5) +
+  scale_color_grey() +
+  scale_fill_grey() +
+  geom_hline(yintercept = 0, color = "black", linetype = 2) +
+  labs(y = "", x = "Cepa") +
+  theme_bw() +
+  theme(legend.position = "none") 
+```
+
+- **Prueba U de Mann-Whitney:**
+
+# Comparación de medias Grupo
+```{r}
+library(rstatix)
+library(ggpubr)
+
+modelList<-list()
+for(i in 8:38){
+    fmla <- formula(paste(names(Datos2)[i], " ~ Cepa"))
+    modelList[[i]]<-wilcox.test(fmla, data = Datos2, paired = FALSE)
+}%>%
+  print()
+
+```
+
+# Comparación de medias Cepa
+```{r}
+ggplot(Datos2, aes(x = Cepa, y = EL))+
+  geom_boxplot()+
+  stat_compare_means()
+```
+
+##Filtrando por Hembra y Cepa
+
+# Análisis de las hembras teniendo en cuenta solo el número total de observaciones
+```{r}
+Datos3 <- datos %>%
+ 
+filter(Sexo != 'Macho')%>% 
+filter(Evento != 'Total_duration')%>% 
+filter(Evento != 'Duration_mean')%>% 
+filter(Jornada != 'Diurna')%>% 
+filter(Momento != 'A')%>% 
+filter(Momento != 'D')%>% 
+filter(Semana != 'AE')
+
+Datos3
+```
+## ACP Total
+
+
+- **ACP:**
+
+```{r}
+dataACP3 <- Datos3 %>% 
+    select(-c(1:7,  20,29,34,33,36:38))
+
+acpCepas3 <- PCA(X = dataACP3, scale.unit = TRUE, ncp = ncol(dataACP3),
+                   graph = FALSE)
+summary(acpCepas3)
+```
+- **Ver contribución de todas las variables en los componentes principales:**
+
+```{r}
+acpCepas3$eig %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "componente") %>%
+  mutate(across(where(is.numeric), round, digits = 2)) %>% 
+  datatable(rownames = FALSE,
+            extensions = 'Buttons',
+            options = list(dom = 'Bfrtip',
+                           buttons = c('excel')))
+```
+## Correlaciones {.tabset .tabset-fade .tabset-pills}
+
+### Tabla
+
+```{r}
+acpCepas3$var$coord %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "Comportamiento") %>%
+  mutate(across(where(is.numeric), round, digits = 2)) %>% 
+  datatable(rownames = FALSE,
+            extensions = 'Buttons',
+            options = list(dom = 'Bfrtip',
+                           buttons = c('excel')))
+```
+- **Gráficar variables en los primeros 3 componentes:**
+
+```{r, fig.width=9}
+ggarrange(
+  fviz_pca_var(acpCepas3, axes = c(1, 2),
+             select.var = list(contrib = 10), repel = TRUE) +
+    labs(title = ""),
+  
+  fviz_pca_var(acpCepas3, axes = c(1, 3),
+             select.var = list(contrib = 10), repel = TRUE)+
+    labs(title = ""),
+  
+  fviz_pca_var(acpCepas3, axes = c(2, 3),
+             select.var = list(contrib = 10), repel = TRUE)+
+    labs(title = ""),
+  
+  ncol = 3
+)
+```
+- **Gráfico componentes con Momento:**
+
+```{r, fig.width=6, fig.height=3}
+Datos3$Dim1 <- acpCepas3$ind$coord[, 1]
+Datos3$Dim2 <- acpCepas3$ind$coord[, 2]
+Datos3$Dim3 <- acpCepas3$ind$coord[, 3]
+
+# Cp1 vs Cp2
+  g3 <- ggarrange(
+  
+  fviz_pca_var(acpCepas3, axes = c(1, 2),  
+               select.var = list(contrib = 16), graph=FALSE,
+               geom = c("text"), col.var = "black", labelsize=4,
+               fill.var = "white", alpha.var = 0, col.quanti.sup = "blue",
+               repel = TRUE) +
+        geom_vline(xintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        geom_hline(yintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+        labs(x = "PC1(44.45%)", y = "PC2(21.67%)",
+        title = "A", color = ""),
+  
+  Datos3 %>% 
+      mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim1, y = Dim2, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right")+
+  xlim(-2, 2) + ylim (-2, 2) +
+  labs(x = "PC1(44.45%)", y = "PC2(21.67%)",
+        title = "B", color = "")
+)
+  g3
+```
+
+- **3 primeros componentes con Momentos:**
+
+```{r, fig.width=8, fig.height=4}
+Datos3$Dim1 <- acpCepas3$ind$coord[, 1]
+Datos3$Dim2 <- acpCepas3$ind$coord[, 2]
+Datos3$Dim3 <- acpCepas3$ind$coord[, 3]
+
+
+# Cp1 vs Cp2
+  ggarrange(
+  
+  fviz_pca_var(acpCepas3, axes = c(1, 2),  
+               select.var = list(contrib = 16), graph=FALSE,
+               geom = c("text"), col.var = "black", labelsize=4,
+               fill.var = "white", alpha.var = 0, col.quanti.sup = "blue",
+               repel = TRUE) +
+        geom_vline(xintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        geom_hline(yintercept = 0, size = 0.1, lty = 2, color = "Black") +
+        theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+        labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "A", color = ""),
+  
+  Datos3 %>% 
+      mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim1, y = Dim2, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right") +
+  xlim(-3, 3) + ylim (-3, 3) +
+  labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "B", color = "")
+)
+  
+# Cp1 vs Cp3
+ggarrange(
+  
+  fviz_pca_var(acpCepas3, axes = c(1, 3),
+             select.var = list(contrib = 10), repel = TRUE) +
+    labs(title = ""),
+  
+  Datos3%>% 
+    mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim1, y = Dim3, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right") +
+  xlim(-1, 1) + ylim (-1, 1) +
+  labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "B", color = "")
+)
+
+# Cp2 vs Cp3
+
+ggarrange(
+  
+  fviz_pca_var(acpCepas3, axes = c(2, 3),
+             select.var = list(contrib = 10), repel = TRUE) +
+    labs(title = ""),
+  
+  Datos3 %>% 
+    mutate(Cepa = fct_relevel(Cepa, 
+           levels = c("C57BL", "Balbc"))) %>%
+  ggplot(data = ., aes(x = Dim2, y = Dim3, color = Cepa)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  geom_hline(yintercept = 0, size = 0.45, lty = 2, color = "Black") +
+  theme_minimal() +
+  theme(panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.background=element_blank()) +
+  theme(legend.position = "right") +
+  xlim(-1, 1) + ylim (-1, 1) +
+  labs(x = "PC1(39.5%)", y = "PC2(19.4%)",
+        title = "B", color = "")
+)
+  
+```
+
+## Modelos Mixtos {.tabset .tabset-fade .tabset-pills}
+
+### Modelo CP1
+
+- **Linear mixed-effects model**
+
+```{r}
+library(nlme)
+mod_cpH1 <- lme(Dim1 ~ Cepa, method = "REML", 
+               random = ~ Cepa | Individuo,
+               data = Datos3,
+               control = lmeControl(opt = "optim"))
+
+tidy(car::Anova(mod_cpH1, type = "II"))
+```
+- **Residuales:**
+
+```{r}
+par(mfrow = c(1, 2))
+#plot(mod_cpH1)
+
+residuales <- mod_cpH1$residuals[, 1]
+ajustados <- mod_cpH1$fitted[, 1]
+
+qqnorm(residuales)
+qqline(residuales)
+
+plot(x = ajustados, y = residuales)
+abline(h = 0, col = "red", lty = 2)
+```
+### Gráfico diferencia entre medias.
+
+```{r}
+library(multcomp)
+library(rstatix)
+library(emmeans)
+mediasH1 <- as.data.frame(cld(emmeans(mod_cpH1, ~Cepa), 
+                            alpha = 0.05, Letters = letters,
+                            adjust = "tukey"))
+
+
+mediasH1  %>%  
+  ggplot(aes(x = Cepa, y = emmean, ymin = emmean - SE,
+             ymax = emmean + SE)) +
+  geom_point(position = position_dodge(0.9), alpha = 1) +
+  geom_errorbar(width = 0.1) +
+  geom_line(aes(group = 1)) +
+  geom_text(aes(label = .group, y = emmean),
+            position = position_dodge(0.9),
+            show.legend = FALSE, color = "black",
+            hjust = -0.3,
+            vjust = -0.5) +
+  scale_color_grey() +
+  scale_fill_grey() +
+  geom_hline(yintercept = 0, color = "black", linetype = 2) +
+  labs(y = "", x = "Cepa") +
+  theme_bw() +
+  theme(legend.position = "none") 
+```
+
+## Modelo CP2
+
+- **Linear mixed-effects mode**
+
+```{r}
+mod_cpH2 <- lme(Dim2~ Cepa, method = "REML", 
+               random = ~ Cepa | Individuo,
+               data = Datos3,
+               control = lmeControl(opt = "optim"))
+
+tidy(car::Anova(mod_cpH2, type = "II"))
+```
+
+- **Estimación de medias:**
+
+```{r}
+library(rstatix)
+library(stats)
+library(emmeans)
+emmeans(mod_cpH2, specs = "Cepa")
+```
+
+## Gráfico diferencia entre medias.
+
+```{r}
+library(multcomp)
+mediasH2 <- as.data.frame(cld(emmeans(mod_cpH2, ~Cepa), 
+                            alpha = 0.05, Letters = letters,
+                            adjust = "tukey"))
+
+
+mediasH2  %>%  
+  ggplot(aes(x = Cepa, y = emmean, ymin = emmean - SE,
+             ymax = emmean + SE)) +
+  geom_point(position = position_dodge(0.9), alpha = 1) +
+  geom_errorbar(width = 0.1) +
+  geom_line(aes(group = 1)) +
+  geom_text(aes(label = .group, y = emmean),
+            position = position_dodge(0.9),
+            show.legend = FALSE, color = "black",
+            hjust = -0.3,
+            vjust = -0.5) +
+  scale_color_grey() +
+  scale_fill_grey() +
+  geom_hline(yintercept = 0, color = "black", linetype = 2) +
+  labs(y = "", x = "Cepa") +
+  theme_bw() +
+  theme(legend.position = "none") 
+```
+
+- **Prueba U de Mann-Whitney:**
+
+# Comparación de medias Grupo
+```{r}
+library(rstatix)
+library(ggpubr)
+
+modelList<-list()
+for(i in 8:38){
+    fmla <- formula(paste(names(Datos3)[i], " ~ Cepa"))
+    modelList[[i]]<-wilcox.test(fmla, data = Datos3, paired = FALSE)
+}%>%
+  print()
+
+```
+
+# Comparación de medias Cepa
+```{r}
+ggplot(Datos3, aes(x = Cepa, y = EL))+
+  geom_boxplot()+
+  stat_compare_means()
+```
