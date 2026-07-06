@@ -1,0 +1,248 @@
+---
+title: "Test emocionales Ratones"
+author: "Juliana Zapata"
+date: "11/21/2023"
+output:
+  html_document:
+    toc: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE,
+                      fig.align = "center")
+# Manejo de datos, gráficos, colores
+library(readxl)
+library(tidyverse)
+library(jcolors)
+library(DT)
+library(plotly)
+library(ggpubr)
+library(broom)
+library(tidyr)
+library(corrplot)
+library(RColorBrewer)
+
+# Análisis multivariado
+library(FactoMineR)
+library(factoextra)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+# Lectura de datos General
+```{r}
+
+datosT <- read_excel("~/Desktop/Estadística Naty/Datos pruebas emocionales filtrada.xlsx", 
+     sheet = "LaberintoTotal")
+datosT
+```
+
+## Descriptivo
+
+```{r}
+library(DT)
+datosT %>% 
+  select(-c(ANIMAL, Sexo)) %>% 
+  gather(key = "Variable", value = "value", -Grupo, -CEPA) %>% 
+  group_by(Variable, Grupo, CEPA) %>%
+  summarise(Promedio = round(mean(value, na.rm = TRUE), digits = 3),
+            DE = round(sd(value, na.rm = TRUE), digits = 3),
+            Mínimo = round(min(value, na.rm = TRUE), digits = 3),
+            Máximo = round(max(value, na.rm = TRUE), digits = 3)) %>% 
+  ungroup() %>% 
+  mutate(CV = round((DE/Promedio)*100, digits = 3)) %>% 
+  datatable(extensions = 'Buttons', options = list(
+     dom = 'Bfrtip',
+     buttons = c('csv', 'excel', 'pdf')))
+```
+
+## Distribuciones originales
+
+```{r, fig.width=9, fig.height=8}
+datosT %>% 
+  select_if(is.numeric) %>% 
+  gather(key = "variable", value = "valor") %>% 
+  ggplot(data = ., aes(x = valor)) +
+  facet_wrap(~variable, scales = "free") +
+  geom_density()
+```
+
+## Shapiro-Wilk 
+
+
+```{r}
+datosT %>% 
+  select_if(is.numeric) %>% 
+  gather(key = "variable", value = "valor") %>% 
+  group_by(variable) %>% 
+  summarise(valor = list(valor)) %>%
+  ungroup() %>% 
+  group_by(variable) %>% 
+  mutate(shapiro_valorP = round(shapiro.test(unlist(valor))$p.value, digits = 5),
+         Resultado = if_else(shapiro_valorP <= 0.05, true = "No normalidad",
+                             false = "Sí normalidad"))
+``` 
+```{r, fig.width=9, fig.height=15}
+datosT%>%
+  select(-c(ANIMAL, Sexo)) %>% 
+  gather(key = "variable", value = "valor", -Grupo, -CEPA) %>% 
+  group_by(variable, Grupo, CEPA) %>% 
+  summarise(promedio = mean(valor, na.rm = TRUE),
+            de = sd(valor, na.rm = TRUE))  %>% 
+  ggplot(aes(x = Grupo, y = promedio, color = CEPA,
+             ymin  = promedio - de,
+             ymax = promedio + de)) +
+facet_wrap(~variable, scales = "free", ncol = 3) + 
+  geom_point() +
+  geom_errorbar(width = 0.2) +
+  scale_fill_jcolors(palette = "pal7") +
+  theme_light() +
+  theme(strip.background = element_rect(fill = "snow4")
+   )
+```
+```{r, fig.width=9, fig.height=8}
+datosT %>%
+  select(-c(ANIMAL, Sexo, Grupo)) %>% 
+  gather(key = "variable", value = "valor", -CEPA) %>% 
+  group_by(variable, CEPA) %>% 
+  summarise(promedio = mean(valor, na.rm = TRUE),
+            de = sd(valor, na.rm = TRUE))  %>% 
+  ggplot(aes(x = CEPA, y = promedio, color = CEPA,
+             ymin  = promedio - de,
+             ymax = promedio + de)) +
+facet_wrap(~variable, scales = "free", ncol = 4) + 
+  geom_point() +
+  geom_errorbar(width = 0.2) +
+  scale_fill_jcolors(palette = "pal7") +
+  theme_light() +
+  theme(strip.background = element_rect(fill = "snow4")
+   )
+```
+```{r, fig.width=9, fig.height=8}
+datosT %>%
+  select(-c(ANIMAL, Sexo)) %>% 
+  gather(key = "variable", value = "valor", -CEPA, -Grupo) %>% 
+  group_by(variable, CEPA, Grupo) %>% 
+  summarise(promedio = mean(valor, na.rm = TRUE),
+            de = sd(valor, na.rm = TRUE))  %>% 
+  ggplot(aes(x = CEPA, y = promedio, color = Grupo,
+             ymin  = promedio - de,
+             ymax = promedio + de)) +
+facet_wrap(~variable, scales = "free", ncol = 4) + 
+  geom_point() +
+  geom_errorbar(width = 0.2) +
+  scale_fill_jcolors(palette = "pal7") +
+  theme_light() +
+  theme(strip.background = element_rect(fill = "snow4")
+   )
+```
+
+##Correlaciones
+
+### Datos globales
+
+```{r}
+datoscor <- datosT %>%
+  select(-c(ANIMAL, Grupo, Sexo, CEPA))
+datoscor
+```
+### Matriz
+```{r}
+matriz_cor <- cor(datoscor)
+as.data.frame(matriz_cor)
+```
+
+
+### Gráfico de correlaciones
+```{r, fig.width=11, fig.height=9}
+library(Hmisc)
+library(RColorBrewer)
+library(corrplot)
+mtx_cor <- datoscor %>% 
+  cor(method = "spearman") 
+
+corrplot((type="upper"),
+  corr = mtx_cor,
+  method = "circle",
+  col = brewer.pal(n = 3, name = "Spectral"),
+  tl.col = "black",
+  tl.srt = 50,
+  tl.cex = 0.9
+  )
+```
+
+## Base de datos para Comparaciones de medias
+
+```{r}
+datosT
+datosT$Grupo <- factor (datosT$Grupo )
+datosT$CEPA <- factor (datosT$CEPA )
+```
+
+## Anova Grupo vs Cepa DTR
+
+```{r}
+datosT$Grupo <- factor ( datosT$Grupo )
+modelo1 <- aov((FEA) ~ Grupo*CEPA, data = datosT)
+summary( modelo1 ) 
+```
+
+### Resultados Tukey
+
+
+```{r}
+TukeyHSD(modelo1)
+```
+### Gráfico de Tukey
+```{r, fig.width=13}
+par(mar=c(5, 15, 2, 1))
+plot(TukeyHSD(modelo1), las = 1)
+```
+
+## T.test Grupo
+
+```{r}
+datosT$Grupo <- factor ( datosT$Grupo )
+ t.test((FEA) ~ Grupo, data = datosT)
+
+```
+## T.test CEPA
+
+```{r}
+datosT$CEPA <- factor ( datosT$CEPA )
+ t.test((FEA) ~ CEPA, data = datosT)
+```
+## Krukal Wallis
+
+```{r}
+mod1 <- kruskal.test(FEA ~ Grupo, data = datosT)
+mod1
+```
+
+- **Prueba U de Mann-Whitney:**
+
+```{r}
+wilcox.test(FEA ~ Grupo, data = datosT)
+```
+# Comparación de medias Grupo
+```{r}
+library(rstatix)
+library(ggpubr)
+datosT %>%
+  wilcox_test(FEA ~ Grupo, paired = FALSE) %>%
+  print()
+```
+
+# Comparación de medias Grupo
+```{r}
+ggplot(datosT, aes(x = Grupo, y = FEA))+
+  geom_boxplot()+
+  stat_compare_means()
+```

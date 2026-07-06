@@ -1,0 +1,147 @@
+---
+title: "Sílabas"
+author: "Juliana Zapata"
+date: "1/10/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Manejo de datos, gráficos, colores
+library(readxl)
+library(tidyverse)
+library(jcolors)
+library(DT)
+library(plotly)
+library(ggpubr)
+library(broom)
+library(janitor) # edición de nombres
+library(mgcv) # Modelos GAM
+library(psych)
+library(autoplotly)
+
+
+# Análisis multivariado
+library(FactoMineR)
+library(factoextra)
+```
+
+```{r}
+datos<- read_excel("~/Desktop/Estadistica Naty/BD tipo de silabas.xlsx", 
+    sheet = "Total")
+
+datos
+```
+# Descriptivo y Exploratorio {.tabset .tabset-fade .tabset-pills}
+
+## Descriptivo por grupo
+
+```{r}
+datos %>% 
+  gather(key = "variable", value = "valor", -Cepa) %>% 
+  group_by(variable, Cepa)  %>%
+  summarise(Mínimo = round(min(valor, na.rm = TRUE), digits = 2),
+            Media  = round(mean(valor, na.rm = TRUE), digits = 2),
+            Máximo = round(max(valor, na.rm = TRUE), digits = 2),
+            DE     = round(sd(valor, na.rm = TRUE), digits = 2),
+            Q1     = round(quantile(valor, probs = 0.25, na.rm = TRUE), digits = 2),
+            Q2     = round(quantile(valor, probs = 0.50, na.rm = TRUE), digits = 2),
+            Q3     = round(quantile(valor, probs = 0.75, na.rm = TRUE), digits = 2),
+            n = n()) %>% 
+  ungroup() %>% 
+  datatable(extensions = 'Buttons', options = list(
+     dom = 'Bfrtip',
+     buttons = c('csv', 'excel', 'pdf')))
+```
+
+## Distribuciones
+
+```{r,fig.width=9, fig.height=4}
+datos%>%
+  gather(key = "variable", value = "value", -Cepa) %>% 
+  
+  mutate (variable = factor(variable, levels = c( "Armónicos	Ascendente", 	"Chevron descendente",	
+                                    "Chevron",	"Corta",	"Compleja",	"Compleja con descendente",
+                                    "Compleja ascendente",	"Descendente",	"Forma de U",
+                                    "Forma de U invertida",	"Un salto",	"Un salto (largo)",	
+                                    "Saltos múltiples",	"Saltos múltiples largos",	"Plana",	
+                                    "Onda"))) %>% 
+  group_by(variable, Cepa) %>% 
+  summarise(promedio = mean(value, na.rm = TRUE),
+            de = sd(value, na.rm = TRUE))  %>% 
+  
+  ggplot(aes(x = Cepa, y = promedio, color = Cepa,
+             ymin  = promedio - de,
+             ymax = promedio + de)) +
+facet_wrap(~variable, scales = "free", ncol = 4) + 
+  geom_point() +
+  geom_errorbar(width = 0.2) +
+  scale_fill_jcolors(palette = "pal7") +
+  theme_light() +
+  theme(strip.background = element_rect(fill = "snow4")
+   )
+```
+# Gráfico 1
+
+```{r, fig.width=5, fig.height=3}
+library(jcolors)
+datos %>% 
+  gather(key = "variable", value = "value", -Cepa) %>% 
+  
+  mutate (variable = factor(variable, levels = c( "Armónicos	Ascendente", 	"Chevron descendente",	
+                                    "Chevron",	"Corta",	"Compleja",	"Compleja con descendente",
+                                    "Compleja ascendente",	"Descendente",	"Forma de U",
+                                    "Forma de U invertida",	"Un salto",	"Un salto (largo)",	
+                                    "Saltos múltiples",	"Saltos múltiples largos",	"Plana",	
+                                    "Onda"))) %>% 
+  group_by(Cepa, variable) %>% 
+  summarise(promedio = mean(value, na.rm = TRUE),
+            de = sd(value, na.rm = TRUE))  %>% 
+  ggplot(aes(x = Cepa, y = promedio, color = Cepa)) +
+  scale_color_manual(values = c("orange", "skyblue")) +
+  facet_wrap(~variable, scales = "free") +
+  geom_point(size = 2, colour="grey50") +
+  theme_classic()+
+  geom_line(size = 0.6, linetype =1) +
+  theme(legend.position = "top") +
+  labs(x = "Week of age", y = "Frequency of skin lesions ", color = "")
+```
+# Distribuciones originales
+
+```{r, fig.width=9, fig.height=8}
+datos %>% 
+  select_if(is.numeric) %>% 
+  gather(key = "variable", value = "valor") %>% 
+  ggplot(data = ., aes(x = valor)) +
+  facet_wrap(~variable, scales = "free") +
+  geom_density()
+```
+
+
+```{r}
+datos
+datos$Cepa <- factor (datos$Cepa )
+```
+#Test z
+```{r}
+prop.test(x = c(12,14), n = c(225, 261),alternative = "two.sided")
+```
+Two-tailed Test porque Null Hypothesis: Both population proportions are equal.H0 : P1 = P2 y Alternate Hypothesis: Both population proportions are not equal.Ha: P1 ≠ P2. Level of significance (α) = 0.05
+p-value: This is the p-value corresponding to a statistic.
+p-value: This is the p-value corresponding to a statistic. Example with p-value is 0.003913.In this case, an alternative hypothesis is population proportions are not equal, i.e. two-tailed.
+95 percent confidence interval: This gives us a 95% confidence interval for the true proportion. Here the 95% confidence interval is [0.0152883,0.0847117].
+sample estimates: It gives the sample proportions. In our case, prop 1 = 0.21 and prop 2 = 0.16.
+The rejection criteria for the given confidence level and conclude the results whether the test statistic lies in the rejection region or non-rejection region.
+
+Conclusion:
+
+Since the p-value[0.003913] is less than the level of significance (α) = 0.05, we reject the null hypothesis.
+
+This means we have sufficient evidence to say that the population proportions are not equal.
+
+
+
+
+
+
+
